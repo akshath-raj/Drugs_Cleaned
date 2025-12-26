@@ -5,18 +5,18 @@ from rdkit import Chem
 from adme_py import ADME
 from admet_ai import ADMETModel
 
-# Define the columns we want to display in the final UI
+# Define the columns to display in the final UI
 DISPLAY_COLUMNS = [
     "Filename",
     # Physicochemical (from adme-py)
     "MW", "WLogP", "TPSA", "HBD", "HBA", "Rotatable Bonds", "Fsp3",
-    # Absorption / Distribution (Mixed sources)
+    # Absorption / Distribution
     "GI Absorption", "Caco-2 (Wang)", "BBB (Martins)", "PPB (AZ)",
-    # Metabolism (from admet-ai)
+    # Metabolism
     "CYP3A4 Inhibition", "CYP2D6 Inhibition",
-    # Toxicity (from admet-ai)
+    # Toxicity
     "hERG", "Ames", "DILI", "Carcinogenicity", "LD50 (Zhu)",
-    # Developability (Mixed sources)
+    # Developability
     "Lipinski", "PAINS", "Brenk", "QED", "SA Score"
 ]
 
@@ -58,8 +58,7 @@ def run_admet_prediction():
     if not compounds:
         return "Could not generate valid SMILES from PDB files.", None, None
 
-    # 3. Run adme-py (SwissADME style)
-    # Extracting specific keys based on your JSON example
+    # 3. Run adme-py (Physicochemical, SA Score, etc.)
     adme_data = []
     
     for cmp in compounds:
@@ -79,61 +78,56 @@ def run_admet_prediction():
             # Lipophilicity
             row["WLogP"] = res.get("lipophilicity", {}).get("wlogp", "N/A")
             
-            # Pharmacokinetics (GI Abs)
+            # Pharmacokinetics
             row["GI Absorption"] = res.get("pharmacokinetics", {}).get("gastrointestinal_absorption", "N/A")
             
             # Druglikeness / Medicinal
             row["Lipinski"] = res.get("druglikeness", {}).get("lipinski", "N/A")
             
-            # Boolean conversions for PAINS/Brenk
+            # Handle Booleans for PAINS/Brenk
             pains = res.get("medicinal", {}).get("pains", False)
             row["PAINS"] = "Yes" if pains else "No"
             
             brenk = res.get("medicinal", {}).get("brenk", False)
             row["Brenk"] = "Yes" if brenk else "No"
             
+            # SA Score (The one you asked about)
             row["SA Score"] = res.get("medicinal", {}).get("synthetic_accessibility", "N/A")
             
         except Exception as e:
             print(f"ADME error for {cmp['Filename']}: {e}")
-            # Fill defaults if error
-            for key in ["MW", "WLogP", "TPSA", "Lipinski", "PAINS"]:
-                row[key] = "Error"
+            row.update({k: "Error" for k in ["MW", "WLogP", "TPSA", "Lipinski", "SA Score"]})
 
         adme_data.append(row)
 
     df_adme = pd.DataFrame(adme_data)
 
-    # 4. Run ADMET-AI (Deep Learning)
+    # 4. Run ADMET-AI (Toxicity, Metabolism, QED)
     try:
         model = ADMETModel()
         preds_df = model.predict(smiles_list)
         
-        # Extract specific columns requested
         admet_mapped = pd.DataFrame()
         
-        # Absorption / Distribution
+        # Mapping columns exactly from your requested list
         admet_mapped["Caco-2 (Wang)"] = preds_df.get("Caco2_Wang", "N/A")
         admet_mapped["BBB (Martins)"] = preds_df.get("BBB_Martins", "N/A")
         admet_mapped["PPB (AZ)"] = preds_df.get("PPBR_AZ", "N/A")
         
-        # Metabolism (Cytochromes)
         admet_mapped["CYP3A4 Inhibition"] = preds_df.get("CYP3A4_Veith", "N/A")
         admet_mapped["CYP2D6 Inhibition"] = preds_df.get("CYP2D6_Veith", "N/A")
         
-        # Toxicity
         admet_mapped["hERG"] = preds_df.get("hERG", "N/A")
         admet_mapped["Ames"] = preds_df.get("AMES", "N/A")
         admet_mapped["DILI"] = preds_df.get("DILI", "N/A")
         admet_mapped["Carcinogenicity"] = preds_df.get("Carcinogens_Lagunin", "N/A")
         admet_mapped["LD50 (Zhu)"] = preds_df.get("LD50_Zhu", "N/A")
         
-        # Developability (QED)
         admet_mapped["QED"] = preds_df.get("QED", "N/A")
 
     except Exception as e:
         print(f"ADMET-AI Error: {e}")
-        admet_mapped = pd.DataFrame(index=range(len(compounds))) # Empty DF
+        admet_mapped = pd.DataFrame(index=range(len(compounds)))
 
     # 5. Merge Data
     df_base = pd.DataFrame(compounds)
@@ -146,11 +140,10 @@ def run_admet_prediction():
     ], axis=1)
 
     # 6. Filter and Reorder Columns
-    # Only keep columns that exist in our DataFrame from the DISPLAY_COLUMNS list
     existing_cols = [c for c in DISPLAY_COLUMNS if c in final_df.columns]
     final_df_clean = final_df[existing_cols]
 
-    # Rounding float columns for display
+    # Round numeric columns for cleaner UI
     numeric_cols = ["MW", "WLogP", "TPSA", "Fsp3", "SA Score", "QED", "LD50 (Zhu)", "PPB (AZ)"]
     for col in numeric_cols:
         if col in final_df_clean.columns:

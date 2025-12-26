@@ -6,6 +6,7 @@ import os
 import requests
 import tempfile
 import gradio as gr
+import pandas as pd
 
 # Import modules
 from config import current_pdb_info, PROTEINS_DIR
@@ -15,6 +16,8 @@ from ramachandran import run_ramplot
 from prankweb import run_prankweb_prediction
 from protein_prep import prepare_protein_meeko
 from docking import run_molecular_docking, display_docked_structure
+# Import the new ADMET module
+from admet_analysis import run_admet_prediction
 
 
 def process_disease(disease_name: str):
@@ -117,6 +120,25 @@ def process_disease(disease_name: str):
             structure_viewer: gr.update(value=""),
             download_file: gr.update(value=None),
             search_status: gr.update(value=f"❌ Error: {str(e)}", visible=True)
+        }
+
+# Function wrapper for ADMET to handle Gradio outputs
+def process_admet():
+    msg, df, csv_path = run_admet_prediction()
+    
+    if df is None:
+        # Error case
+        return {
+            admet_status: gr.update(value=f"❌ {msg}", visible=True),
+            admet_table: gr.update(visible=False),
+            admet_download: gr.update(visible=False)
+        }
+    else:
+        # Success case
+        return {
+            admet_status: gr.update(value=f"✅ {msg}", visible=True),
+            admet_table: gr.update(value=df, visible=True),
+            admet_download: gr.update(value=csv_path, visible=True)
         }
 
 
@@ -239,6 +261,34 @@ with gr.Blocks(theme=gr.themes.Soft(), css="""
                 
                 with gr.Column(scale=2):
                     docked_viewer = gr.HTML(label="🔬 Docked Complex Viewer")
+
+        # Tab 6: ADMET Analysis
+        with gr.Tab("🧪 ADMET Analysis"):
+            gr.Markdown("### 💊 Comprehensive ADMET Profiling")
+            gr.Markdown("""
+            Perform physicochemical, pharmacological, and toxicity analysis on your docked ligands. 
+            This combines **SwissADME-style** calculations (including SA Score) with **ADMET-AI** deep learning predictions.
+            
+            **Parameters Analyzed:**
+            * **Physicochemical:** MW, WLogP, TPSA, HBD, HBA, Rotatable bonds, Fsp3
+            * **Absorption:** GI Absorption, Caco-2, BBB, PPB
+            * **Metabolism:** CYP3A4 inhibition, CYP2D6 inhibition
+            * **Toxicity:** hERG, Ames, DILI, Carcinogenicity, LD50
+            * **Developability:** Lipinski, PAINS, Brenk, QED, SA score
+            """)
+            
+            admet_btn = gr.Button("⚗️ Run ADMET Prediction", variant="secondary", size="lg")
+            admet_status = gr.Markdown(visible=False)
+            
+            with gr.Row():
+                admet_download = gr.File(label="📥 Download Full Report (CSV)", visible=False)
+            
+            admet_table = gr.Dataframe(
+                label="ADMET Results Table", 
+                visible=False,
+                interactive=False,
+                wrap=True
+            )
     
     # Event handlers
     search_btn.click(
@@ -275,6 +325,13 @@ with gr.Blocks(theme=gr.themes.Soft(), css="""
         fn=display_docked_structure,
         inputs=[pose_selector],
         outputs=[docked_viewer]
+    )
+
+    # ADMET Handler
+    admet_btn.click(
+        fn=process_admet,
+        inputs=[],
+        outputs={admet_status, admet_table, admet_download}
     )
 
 if __name__ == "__main__":
