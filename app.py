@@ -166,6 +166,13 @@ with gr.Blocks(theme=gr.themes.Soft(), css="""
         margin: 0;
         font-weight: 500;
     }
+    .nav-buttons {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 20px;
+        padding-top: 20px;
+        border-top: 2px solid #e5e7eb;
+    }
 """, title="Protein Structure Finder & Analyzer") as demo:
     
     gr.HTML("""
@@ -175,9 +182,9 @@ with gr.Blocks(theme=gr.themes.Soft(), css="""
         </div>
     """)
     
-    with gr.Tabs():
+    with gr.Tabs() as tabs:
         # Tab 1: Structure Search
-        with gr.Tab("🔍 Structure Search"):
+        with gr.Tab("🔍 Structure Search", id=0):
             with gr.Row():
                 with gr.Column(scale=1):
                     disease_input = gr.Textbox(
@@ -194,9 +201,13 @@ with gr.Blocks(theme=gr.themes.Soft(), css="""
                 
                 with gr.Column(scale=2):
                     structure_viewer = gr.HTML(label="🔬 3D Structure Viewer")
+            
+            with gr.Row(elem_classes="nav-buttons"):
+                prev_btn_1 = gr.Button("← Previous", variant="secondary", visible=False)
+                next_btn_1 = gr.Button("Next: Ramachandran Analysis →", variant="primary")
         
         # Tab 2: Ramachandran Plot
-        with gr.Tab("📊 Ramachandran Analysis"):
+        with gr.Tab("📊 Ramachandran Analysis", id=1):
             gr.Markdown("### Ramachandran Plot Analysis")
             gr.Markdown("Analyze the backbone dihedral angles of your protein structure to assess its quality and validate the geometry.")
             
@@ -214,18 +225,26 @@ with gr.Blocks(theme=gr.themes.Soft(), css="""
                     plot3 = gr.Image(label="Std Map Type 2D General Gly", visible=False)
                 with gr.Column():
                     plot4 = gr.Image(label="Std Map Type 3D General", visible=False)
+            
+            with gr.Row(elem_classes="nav-buttons"):
+                prev_btn_2 = gr.Button("← Previous: Structure Search", variant="secondary")
+                next_btn_2 = gr.Button("Next: Binding Site Prediction →", variant="primary")
         
         # Tab 3: PrankWeb Prediction
-        with gr.Tab("🎯 Binding Site Prediction"):
+        with gr.Tab("🎯 Binding Site Prediction", id=2):
             gr.Markdown("### PrankWeb Binding Site Prediction")
             gr.Markdown("Predict potential ligand binding sites on your protein structure using PrankWeb.")
             
             prankweb_btn = gr.Button("🔮 Run PrankWeb Prediction", variant="secondary", size="lg")
             prankweb_status = gr.HTML(visible=False)
             prankweb_results = gr.Dataframe(label="Prediction Results", visible=False)
+            
+            with gr.Row(elem_classes="nav-buttons"):
+                prev_btn_3 = gr.Button("← Previous: Ramachandran Analysis", variant="secondary")
+                next_btn_3 = gr.Button("Next: Protein Preparation →", variant="primary")
         
         # Tab 4: Protein Preparation
-        with gr.Tab("⚙️ Protein Preparation"):
+        with gr.Tab("⚙️ Protein Preparation", id=3):
             gr.Markdown("### Protein Preparation for Docking (Meeko)")
             gr.Markdown("Prepare your protein structure for molecular docking by converting it to PDBQT format with proper charges and atom types.")
             
@@ -237,9 +256,13 @@ with gr.Blocks(theme=gr.themes.Soft(), css="""
                     prepared_viewer = gr.HTML(label="🔬 Prepared Structure Viewer")
                 with gr.Column(scale=1):
                     prepared_download = gr.File(label="💾 Download PDBQT File", visible=True)
+            
+            with gr.Row(elem_classes="nav-buttons"):
+                prev_btn_4 = gr.Button("← Previous: Binding Site Prediction", variant="secondary")
+                next_btn_4 = gr.Button("Next: Molecular Docking →", variant="primary")
         
         # Tab 5: Molecular Docking
-        with gr.Tab("🚀 Molecular Docking"):
+        with gr.Tab("🚀 Molecular Docking", id=4):
             gr.Markdown("### Molecular Docking (AutoDock Vina)")
             gr.Markdown("Perform molecular docking to predict how ligands bind to your protein target.")
             
@@ -261,9 +284,13 @@ with gr.Blocks(theme=gr.themes.Soft(), css="""
                 
                 with gr.Column(scale=2):
                     docked_viewer = gr.HTML(label="🔬 Docked Complex Viewer")
+            
+            with gr.Row(elem_classes="nav-buttons"):
+                prev_btn_5 = gr.Button("← Previous: Protein Preparation", variant="secondary")
+                next_btn_5 = gr.Button("Next: ADMET Analysis →", variant="primary")
 
         # Tab 6: ADMET Analysis
-        with gr.Tab("🧪 ADMET Analysis"):
+        with gr.Tab("🧪 ADMET Analysis", id=5):
             gr.Markdown("### 💊 Comprehensive ADMET Profiling")
             gr.Markdown("""
             Perform physicochemical, pharmacological, and toxicity analysis on your docked ligands. 
@@ -289,8 +316,30 @@ with gr.Blocks(theme=gr.themes.Soft(), css="""
                 interactive=False,
                 wrap=True
             )
+            
+            with gr.Row(elem_classes="nav-buttons"):
+                prev_btn_6 = gr.Button("← Previous: Molecular Docking", variant="secondary")
+                next_btn_6 = gr.Button("Back to Structure Search", variant="primary")
     
-    # Event handlers
+    # Navigation event handlers
+    next_btn_1.click(lambda: gr.Tabs(selected=1), None, tabs)
+    
+    prev_btn_2.click(lambda: gr.Tabs(selected=0), None, tabs)
+    next_btn_2.click(lambda: gr.Tabs(selected=2), None, tabs)
+    
+    prev_btn_3.click(lambda: gr.Tabs(selected=1), None, tabs)
+    next_btn_3.click(lambda: gr.Tabs(selected=3), None, tabs)
+    
+    prev_btn_4.click(lambda: gr.Tabs(selected=2), None, tabs)
+    next_btn_4.click(lambda: gr.Tabs(selected=4), None, tabs)
+    
+    prev_btn_5.click(lambda: gr.Tabs(selected=3), None, tabs)
+    next_btn_5.click(lambda: gr.Tabs(selected=5), None, tabs)
+    
+    prev_btn_6.click(lambda: gr.Tabs(selected=4), None, tabs)
+    next_btn_6.click(lambda: gr.Tabs(selected=0), None, tabs)
+    
+    # Main feature event handlers
     search_btn.click(
         fn=process_disease,
         inputs=[disease_input],
