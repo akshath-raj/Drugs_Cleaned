@@ -7,9 +7,8 @@ import subprocess
 import gradio as gr
 from config import current_pdb_info, RAMPLOT_OUTPUT_DIR, PROTEINS_DIR
 
-
+"""
 def run_ramplot():
-    """Run RAMPlot analysis on the current PDB file."""
     if not current_pdb_info["pdb_id"] or not current_pdb_info["pdb_path"]:
         return (
             gr.update(value="<div style='padding: 20px; background: #fee; border-radius: 8px; color: #c33;'>❌ No structure loaded. Please search for a disease first.</div>", visible=True),
@@ -78,4 +77,108 @@ def run_ramplot():
             gr.update(value=None, visible=False),
             gr.update(value=None, visible=False),
             gr.update(value=None, visible=False)
+        )
+"""
+
+def run_ramplot(progress=gr.Progress()):
+    # -------------------------
+    # 1️⃣ No structure case
+    # -------------------------
+    if not current_pdb_info["pdb_id"] or not current_pdb_info["pdb_path"]:
+        return (
+            gr.update(
+                value="<div style='padding: 20px; background: #fee; border-radius: 8px; color: #c33;'>❌ No structure loaded. Please search for a disease first.</div>",
+                visible=True
+            ),
+            gr.update(visible=False),
+            gr.update(visible=False),
+            gr.update(visible=False),
+            gr.update(visible=False)
+        )
+
+    # -------------------------
+    # 2️⃣ Show processing message via Progress
+    # -------------------------
+    progress(0, desc="🔬 Processing Ramachandran plot analysis...")
+
+    try:
+        input_folder = PROTEINS_DIR
+        output_folder = RAMPLOT_OUTPUT_DIR
+
+        os.makedirs(input_folder, exist_ok=True)
+        os.makedirs(output_folder, exist_ok=True)
+
+        progress(0.3, desc="Running ramplot command...")
+
+        cmd = [
+            "ramplot", "pdb",
+            "-i", input_folder,
+            "-o", output_folder,
+            "-m", "0",
+            "-r", "600",
+            "-p", "png"
+        ]
+
+        subprocess.run(
+            cmd,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=120
+        )
+
+        progress(0.7, desc="Loading generated plots...")
+
+        plot_dir = os.path.join(output_folder, "Plots")
+
+        plot_files = {
+            'map2d': os.path.join(plot_dir, "MapType2DAll.png"),
+            'map3d': os.path.join(plot_dir, "MapType3DAll.png"),
+            'std2d': os.path.join(plot_dir, "StdMapType2DGeneralGly.png"),
+            'std3d': os.path.join(plot_dir, "StdMapType3DGeneral.png"),
+        }
+
+        # 🔐 Hard safety check (prevents UI crash)
+        for name, path in plot_files.items():
+            if not os.path.exists(path):
+                raise FileNotFoundError(f"Missing plot: {path}")
+
+        progress(1.0, desc="✅ Complete!")
+
+        # -------------------------
+        # 3️⃣ Final successful UI update
+        # -------------------------
+        return (
+            gr.update(
+                value="<div style='padding: 20px; background: #d4edda; border-radius: 8px; color: #155724;'>✅ Ramachandran plot analysis completed!</div>",
+                visible=True
+            ),
+            gr.update(value=plot_files['map2d'], visible=True),
+            gr.update(value=plot_files['map3d'], visible=True),
+            gr.update(value=plot_files['std2d'], visible=True),
+            gr.update(value=plot_files['std3d'], visible=True)
+        )
+
+    except subprocess.CalledProcessError as e:
+        return (
+            gr.update(
+                value=f"<div style='padding: 20px; background: #fee; border-radius: 8px; color: #c33;'>⚠️ Analysis failed:<br><pre>{e.stderr.decode()}</pre></div>",
+                visible=True
+            ),
+            gr.update(visible=False),
+            gr.update(visible=False),
+            gr.update(visible=False),
+            gr.update(visible=False)
+        )
+
+    except Exception as e:
+        return (
+            gr.update(
+                value=f"<div style='padding: 20px; background: #fee; border-radius: 8px; color: #c33;'>❌ Error: {str(e)}</div>",
+                visible=True
+            ),
+            gr.update(visible=False),
+            gr.update(visible=False),
+            gr.update(visible=False),
+            gr.update(visible=False)
         )
