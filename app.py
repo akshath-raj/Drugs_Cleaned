@@ -16,7 +16,7 @@ from ramachandran import run_ramplot
 from prankweb import run_prankweb_prediction
 from protein_prep import prepare_protein_meeko
 from docking import run_molecular_docking, display_docked_structure
-# Import the new ADMET module
+# Import the updated ADMET module
 from admet_analysis import run_admet_prediction
 
 
@@ -124,21 +124,37 @@ def process_disease(disease_name: str):
 
 # Function wrapper for ADMET to handle Gradio outputs
 def process_admet():
-    msg, df, csv_path = run_admet_prediction()
-    
-    if df is None:
-        # Error case
-        return {
-            admet_status: gr.update(value=f"❌ {msg}", visible=True),
-            admet_table: gr.update(visible=False),
-            admet_download: gr.update(visible=False)
-        }
-    else:
-        # Success case
+    """
+    Runs the ADMET pipeline and handles the output safely.
+    Handles both success (tuple) and failure (None) from run_admet_prediction.
+    """
+    try:
+        # Run prediction
+        result = run_admet_prediction()
+        
+        # Handle Failure (e.g. no files found)
+        if result is None:
+            return {
+                admet_status: gr.update(value="❌ Analysis Failed: No docking results found or SMILES generation failed. Please run docking first.", visible=True),
+                admet_table: gr.update(visible=False),
+                admet_download: gr.update(visible=False)
+            }
+            
+        # Handle Success (unpack tuple)
+        msg, df, csv_path = result
+        
         return {
             admet_status: gr.update(value=f"✅ {msg}", visible=True),
             admet_table: gr.update(value=df, visible=True),
             admet_download: gr.update(value=csv_path, visible=True)
+        }
+        
+    except Exception as e:
+        # Unexpected System Error
+        return {
+            admet_status: gr.update(value=f"❌ System Error: {str(e)}", visible=True),
+            admet_table: gr.update(visible=False),
+            admet_download: gr.update(visible=False)
         }
 
 
@@ -291,17 +307,15 @@ with gr.Blocks(theme=gr.themes.Soft(), css="""
 
         # Tab 6: ADMET Analysis
         with gr.Tab("🧪 ADMET Analysis", id=5):
-            gr.Markdown("### 💊 Comprehensive ADMET Profiling")
+            gr.Markdown("### 💊 Comprehensive ADMET Profiling & Filtering")
             gr.Markdown("""
-            Perform physicochemical, pharmacological, and toxicity analysis on your docked ligands. 
-            This combines **SwissADME-style** calculations (including SA Score) with **ADMET-AI** deep learning predictions.
+            This module applies a **Multi-Stage Filtering Pipeline** to your docked ligands to ensure safety and developability:
             
-            **Parameters Analyzed:**
-            * **Physicochemical:** MW, WLogP, TPSA, HBD, HBA, Rotatable bonds, Fsp3
-            * **Absorption:** GI Absorption, Caco-2, BBB, PPB
-            * **Metabolism:** CYP3A4 inhibition, CYP2D6 inhibition
-            * **Toxicity:** hERG, Ames, DILI, Carcinogenicity, LD50
-            * **Developability:** Lipinski, PAINS, Brenk, QED, SA score
+            1.  **Primary Filters (Hard Stops):** Auto-rejects ligands with high toxicity risks (e.g., Ames Positive, High hERG/DILI).
+            2.  **Developability Filters (Soft Constraints):** Flags ligands with suboptimal properties (e.g., MW > 550, SA Score > 6.0).
+            3.  **Composite Scoring:** Calculates a final score (0-100) based on accumulated penalties.
+            
+            **Final Decision:** Ligands are classified as **ACCEPT**, **REVIEW**, or **REJECT** based on the rules.
             """)
             
             admet_btn = gr.Button("⚗️ Run ADMET Prediction", variant="secondary", size="lg")
