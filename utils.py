@@ -291,8 +291,8 @@ def find_best_pdb_structure(protein_name: str, max_check: int = 100) -> Optional
             print(f"  → New best candidate!")
             
             # Auto-stop if we found excellent resolution without mutations
-            if resolution < 1.5:
-                print(f"\n✓ Found excellent resolution (< 1.5Å) without mutations! Stopping search.")
+            if resolution < 2:
+                print(f"\n✓ Found excellent resolution (< 2Å) without mutations! Stopping search.")
                 break
     
     if best_candidate is None:
