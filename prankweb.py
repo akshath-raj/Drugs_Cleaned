@@ -5,35 +5,73 @@ PrankWeb binding site prediction module
 import os
 import time
 import zipfile
+import subprocess  # Added for obabel
 import pandas as pd
 import gradio as gr
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from config import current_pdb_info, PRANKWEB_OUTPUT_DIR
+from config import current_pdb_info, PRANKWEB_OUTPUT_DIR, PREPARED_PROTEIN_DIR
 
+def convert_pdbqt_to_pdb(pdbqt_file, pdb_file):
+    """
+    Converts PDBQT to PDB using OpenBabel (obabel).
+    """
+    try:
+        # Using obabel to convert. -h adds hydrogens (optional, but often good for pdbqt conversions)
+        subprocess.run(['obabel', pdbqt_file, '-O', pdb_file], 
+                     check=True, capture_output=True)
+        return True
+    except Exception as e:
+        print(f"OpenBabel conversion failed: {e}")
+        return False
 
 def run_prankweb_prediction():
-    """Run PrankWeb prediction on the current PDB file."""
-    if not current_pdb_info["pdb_id"] or not current_pdb_info["pdb_path"]:
+    """Run PrankWeb prediction using the Prepared Protein (converted back to PDB)."""
+    
+    # 1. Validate Input (Must come from Protein Prep step now)
+    prepared_pdbqt_path = current_pdb_info.get("prepared_pdbqt")
+    
+    # Fallback to PREPARED_PROTEIN_DIR if variable is missing but file exists
+    if not prepared_pdbqt_path:
+         potential_path = os.path.join(PREPARED_PROTEIN_DIR, "prepared_protein.pdbqt")
+         if os.path.exists(potential_path):
+             prepared_pdbqt_path = potential_path
+
+    if not prepared_pdbqt_path or not os.path.exists(prepared_pdbqt_path):
         return (
-            gr.update(value="<div style='padding: 20px; background: #fee; border-radius: 8px; color: #c33;'>❌ No structure loaded. Please search for a disease first.</div>", visible=True),
+            gr.update(value="<div style='padding: 20px; background: #fee; border-radius: 8px; color: #c33;'>❌ No prepared protein found. Please run <b>Protein Preparation</b> first.</div>", visible=True),
             gr.update(value=None, visible=False)
         )
     
     # Show processing message
     yield (
-        gr.update(value="<div style='padding: 20px; background: #fff3cd; border-radius: 8px; color: #856404;'>🔮 Processing PrankWeb prediction (this may take several minutes)...</div>", visible=True),
+        gr.update(value="<div style='padding: 20px; background: #fff3cd; border-radius: 8px; color: #856404;'>⚙️ Converting PDBQT to PDB using OpenBabel...</div>", visible=True),
         gr.update(value=None, visible=False)
     )
     
-    pdb_path = current_pdb_info["pdb_path"]
-    pdb_id = current_pdb_info["pdb_id"]
     output_dir = PRANKWEB_OUTPUT_DIR
     os.makedirs(output_dir, exist_ok=True)
     
-    absolute_path = os.path.abspath(pdb_path)
+    # 2. Convert PDBQT -> PDB
+    temp_pdb_filename = "prepared_for_prankweb.pdb"
+    temp_pdb_path = os.path.abspath(os.path.join(output_dir, temp_pdb_filename))
+    
+    success = convert_pdbqt_to_pdb(prepared_pdbqt_path, temp_pdb_path)
+    
+    if not success:
+         return (
+            gr.update(value="<div style='padding: 20px; background: #fee; border-radius: 8px; color: #c33;'>❌ Failed to convert PDBQT to PDB. Please ensure <b>OpenBabel (obabel)</b> is installed.</div>", visible=True),
+            gr.update(value=None, visible=False)
+        )
+
+    yield (
+        gr.update(value="<div style='padding: 20px; background: #fff3cd; border-radius: 8px; color: #856404;'>🔮 Uploading to PrankWeb (this may take several minutes)...</div>", visible=True),
+        gr.update(value=None, visible=False)
+    )
+
+    # 3. Selenium Automation
     
     # Setup Chrome driver with download preferences and HEADLESS mode
     chrome_options = webdriver.ChromeOptions()
@@ -58,8 +96,9 @@ def run_prankweb_prediction():
         driver.execute_script("arguments[0].click();", custom_structure)
         time.sleep(1)
         
+        # Upload the CONVERTED PDB file
         file_input = driver.find_element(By.CSS_SELECTOR, "input[type='file']")
-        file_input.send_keys(absolute_path)
+        file_input.send_keys(temp_pdb_path)
         time.sleep(2)
         
         submit_btn = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "button[type='submit']")))
@@ -85,8 +124,12 @@ def run_prankweb_prediction():
                 gr.update(value=None, visible=False)
             )
         
-        zip_path = os.path.join(output_dir, zip_files[0])
-        extract_path = os.path.join(output_dir, zip_files[0].replace('.zip', ''))
+        # Get the most recent zip file if multiple exist
+        zip_files.sort(key=lambda x: os.path.getmtime(os.path.join(output_dir, x)), reverse=True)
+        target_zip = zip_files[0]
+        
+        zip_path = os.path.join(output_dir, target_zip)
+        extract_path = os.path.join(output_dir, target_zip.replace('.zip', ''))
         
         os.makedirs(extract_path, exist_ok=True)
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
@@ -109,7 +152,7 @@ def run_prankweb_prediction():
         current_pdb_info["prankweb_csv"] = csv_path
         
         yield (
-            gr.update(value="<div style='padding: 20px; background: #d4edda; border-radius: 8px; color: #155724;'>✅ PrankWeb prediction completed!</div>", visible=True),
+            gr.update(value=f"<div style='padding: 20px; background: #d4edda; border-radius: 8px; color: #155724;'>✅ PrankWeb prediction completed!<br><small>Converted PDBQT to PDB via OpenBabel</small></div>", visible=True),
             gr.update(value=df, visible=True)
         )
         

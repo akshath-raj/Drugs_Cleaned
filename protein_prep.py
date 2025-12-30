@@ -12,28 +12,36 @@ from visualization import show_structure
 
 def prepare_protein_meeko():
     """Prepare protein using Meeko for docking."""
-    if not current_pdb_info["pdb_id"] or not current_pdb_info["pdb_path"]:
+    
+    # 1. Check for loaded structure
+    if not current_pdb_info.get("pdb_id") or not current_pdb_info.get("pdb_path"):
         return (
             gr.update(value="<div style='padding: 20px; background: #fee; border-radius: 8px; color: #c33;'>❌ No structure loaded. Please search for a disease first.</div>", visible=True),
             gr.update(value=""),
             gr.update(value=None)
         )
     
+    # 2. Identify Source File (Swiss-Model vs Original)
+    # The Ramachandran module updates 'pdb_path' if a Swiss-Model is generated.
+    pdb_path = current_pdb_info["pdb_path"]
+    pdb_id = current_pdb_info["pdb_id"]
+    
+    is_swiss = "swiss_model" in os.path.basename(pdb_path)
+    source_msg = "SWISS-MODEL Homology Structure" if is_swiss else "Original Crystal Structure"
+    
     # Show processing message
     yield (
-        gr.update(value="<div style='padding: 20px; background: #fff3cd; border-radius: 8px; color: #856404;'>⚙️ Preparing protein with Meeko...</div>", visible=True),
+        gr.update(value=f"<div style='padding: 20px; background: #fff3cd; border-radius: 8px; color: #856404;'>⚙️ Preparing protein with Meeko...<br>🔍 Source: <b>{source_msg}</b></div>", visible=True),
         gr.update(value=""),
         gr.update(value=None)
     )
-    
-    pdb_path = current_pdb_info["pdb_path"]
-    pdb_id = current_pdb_info["pdb_id"]
     
     output_dir = PREPARED_PROTEIN_DIR
     os.makedirs(output_dir, exist_ok=True)
     
     output_base = os.path.join(output_dir, "prepared_protein")
     
+    # 3. Run Meeko
     cmd = [
         'mk_prepare_receptor.py',
         '-i', pdb_path,
@@ -65,7 +73,7 @@ def prepare_protein_meeko():
             pdbqt_content = f.read()
         
         # Create 3D visualization (PDBQT format is similar to PDB)
-        protein_name = f"Prepared Protein ({pdb_id})"
+        protein_name = f"Prepared: {pdb_id} ({'Swiss-Model' if is_swiss else 'Original'})"
         structure_html = show_structure(pdbqt_content, pdb_id, protein_name)
         
         # Create download file
@@ -74,7 +82,7 @@ def prepare_protein_meeko():
         temp_file.close()
         
         success_msg = "<div style='padding: 20px; background: #d4edda; border-radius: 8px; color: #155724;'>"
-        success_msg += "✅ Protein preparation completed!<br>"
+        success_msg += f"✅ Protein preparation completed!<br>ℹ️ Used: <b>{source_msg}</b><br>"
         success_msg += f"<small>Output: {pdbqt_path}</small>"
         if result.stdout:
             success_msg += f"<br><small>{result.stdout}</small>"
@@ -100,4 +108,3 @@ def prepare_protein_meeko():
             gr.update(value=""),
             gr.update(value=None)
         )
-
