@@ -201,6 +201,31 @@ def download_pdb_file(pdb_id: str, output_dir: str = "proteins") -> Optional[str
         return None
 
 
+def download_fasta_file(pdb_id: str, output_dir: str = "proteins") -> Optional[str]:
+    """
+    Download a FASTA file for a PDB structure and save it to the specified directory.
+    Returns the file path if successful, None otherwise.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    
+    url = f"https://www.rcsb.org/fasta/entry/{pdb_id}"
+    output_path = os.path.join(output_dir, f"{pdb_id}.fasta")
+    
+    try:
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        
+        with open(output_path, 'w') as f:
+            f.write(response.text)
+        
+        print(f"Downloaded {pdb_id}.fasta to {output_path}")
+        return output_path
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Error downloading FASTA file {pdb_id}: {e}")
+        return None
+
+
 def find_best_pdb_structure(protein_name: str, max_check: int = 100) -> Optional[Tuple[str, str]]:
     """
     Find the best PDB structure for a protein:
@@ -276,14 +301,18 @@ def find_best_pdb_structure(protein_name: str, max_check: int = 100) -> Optional
     
     pdb_id, resolution = best_candidate
     print(f"\n✓ Best structure: {pdb_id} (resolution: {resolution}Å, X-ray, no mutations)")
-    print(f"Downloading...")
+    print(f"Downloading PDB and FASTA files...")
     
-    file_path = download_pdb_file(pdb_id)
+    pdb_path = download_pdb_file(pdb_id)
+    fasta_path = download_fasta_file(pdb_id)
     
-    if file_path:
-        return (pdb_id, file_path)
+    if pdb_path and fasta_path:
+        return (pdb_id, pdb_path)
+    elif pdb_path:
+        print("Warning: PDB file downloaded but FASTA file failed")
+        return (pdb_id, pdb_path)
     
-    print("Failed to download the selected structure")
+    print("Failed to download the required files")
     return None
 
 
