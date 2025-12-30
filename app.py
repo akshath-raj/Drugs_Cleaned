@@ -10,7 +10,7 @@ import pandas as pd
 
 # Import modules
 from config import current_pdb_info, PROTEINS_DIR
-from utils import map_disease_to_protein, search_pdb_for_first_hit, remove_ligands_from_pdb
+from utils import map_disease_to_protein, find_best_pdb_structure
 from visualization import show_structure
 from ramachandran import run_ramplot
 from prankweb import run_prankweb_prediction
@@ -20,97 +20,121 @@ from docking import run_molecular_docking, display_docked_structure
 from admet_analysis import run_admet_prediction
 
 
-def process_disease(disease_name: str):
-    """Main function to process disease and return structure."""
+def process_disease(user_input: str):
+    """Main function to process disease/protein input and return structure using new search method."""
     
-    if not disease_name.strip():
+    if not user_input.strip():
         current_pdb_info.update({"pdb_id": None, "pdb_path": None, "prepared_pdbqt": None, "docking_results": None, "prankweb_csv": None})
         return {
             info_box: gr.update(visible=False),
             structure_viewer: gr.update(value=""),
             download_file: gr.update(value=None),
-            search_status: gr.update(value="⚠️ Please enter a disease or condition", visible=True)
+            search_status: gr.update(value="⚠️ Please enter a disease, condition, or protein name", visible=True)
         }
     
-    # Map disease to protein
-    protein_name = map_disease_to_protein(disease_name)
+    # Try to map disease to protein first
+    protein_name = map_disease_to_protein(user_input)
     
+    # If no disease mapping found, assume the user entered a protein name directly
     if not protein_name:
+        protein_name = user_input.strip()
+        is_direct_protein = True
+    else:
+        is_direct_protein = False
+    
+    # Use the new find_best_pdb_structure function
+    # This function now handles UniProt search, PDB filtering, and downloading
+    result = find_best_pdb_structure(protein_name, max_check=100)
+    
+    if not result:
         current_pdb_info.update({"pdb_id": None, "pdb_path": None, "prepared_pdbqt": None, "docking_results": None, "prankweb_csv": None})
+        
+        # Provide different error messages based on input type
+        if is_direct_protein:
+            error_msg = f"❌ No suitable PDB structure found for protein: {protein_name}. Please verify the protein name."
+        else:
+            error_msg = f"❌ No suitable PDB structure found for the target protein: {protein_name}"
+        
         return {
             info_box: gr.update(visible=False),
             structure_viewer: gr.update(value=""),
             download_file: gr.update(value=None),
-            search_status: gr.update(value="❌ No protein mapping found", visible=True)
+            search_status: gr.update(value=error_msg, visible=True)
         }
     
-    # Search PDB
-    pdb_id = search_pdb_for_first_hit(protein_name)
-    
-    if not pdb_id:
-        current_pdb_info.update({"pdb_id": None, "pdb_path": None, "prepared_pdbqt": None, "docking_results": None, "prankweb_csv": None})
-        return {
-            info_box: gr.update(visible=False),
-            structure_viewer: gr.update(value=""),
-            download_file: gr.update(value=None),
-            search_status: gr.update(value="❌ No PDB structure found", visible=True)
-        }
-    
-    # Download PDB file
-    url = f"https://files.rcsb.org/download/{pdb_id}.pdb"
+    # Unpack result
+    pdb_id, pdb_path = result
     
     try:
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
-        pdb_content = response.text
+        # Read the downloaded PDB file directly without any processing
+        with open(pdb_path, 'r') as f:
+            pdb_content = f.read()
         
-        # Clean structure
-        pdb_content, stats = remove_ligands_from_pdb(pdb_content, 'A')
+        # Update global variable with the path to the downloaded file
+        current_pdb_info.update({
+            "pdb_id": pdb_id, 
+            "pdb_path": pdb_path, 
+            "prepared_pdbqt": None, 
+            "docking_results": None, 
+            "prankweb_csv": None
+        })
         
-        # Save to proteins folder
-        proteins_folder = PROTEINS_DIR
-        os.makedirs(proteins_folder, exist_ok=True)
-        pdb_path = os.path.join(proteins_folder, f"{pdb_id}.pdb")
-        
-        with open(pdb_path, 'w') as f:
-            f.write(pdb_content)
-        
-        # Update global variable
-        current_pdb_info.update({"pdb_id": pdb_id, "pdb_path": pdb_path, "prepared_pdbqt": None, "docking_results": None, "prankweb_csv": None})
-        
-        # Build info display
-        info_html = f"""
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 24px; border-radius: 16px; color: white; box-shadow: 0 8px 32px rgba(0,0,0,0.1);">
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
-                <div>
-                    <div style="font-size: 13px; opacity: 0.9; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">Disease/Condition</div>
-                    <div style="font-size: 20px; font-weight: 700;">{disease_name}</div>
+        # Build info display with enhanced styling
+        # Show different labels based on whether it was a disease or direct protein search
+        if is_direct_protein:
+            info_html = f"""
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 24px; border-radius: 16px; color: white; box-shadow: 0 8px 32px rgba(0,0,0,0.1);">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+                    <div>
+                        <div style="font-size: 13px; opacity: 0.9; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">Protein Name</div>
+                        <div style="font-size: 20px; font-weight: 700;">{protein_name}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 13px; opacity: 0.9; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">PDB Structure ID</div>
+                        <div style="font-size: 20px; font-weight: 700;">{pdb_id}</div>
+                    </div>
                 </div>
-                <div>
-                    <div style="font-size: 13px; opacity: 0.9; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">Target Protein</div>
-                    <div style="font-size: 20px; font-weight: 700;">{protein_name}</div>
-                </div>
-                <div>
-                    <div style="font-size: 13px; opacity: 0.9; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">PDB Structure ID</div>
-                    <div style="font-size: 20px; font-weight: 700;">{pdb_id}</div>
+                <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.2);">
+                    <div style="font-size: 12px; opacity: 0.85;">
+                        ✓ High-quality X-ray structure with no mutations • Resolution optimized • Original structure unmodified
+                    </div>
                 </div>
             </div>
-        </div>
-        """
+            """
+        else:
+            info_html = f"""
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 24px; border-radius: 16px; color: white; box-shadow: 0 8px 32px rgba(0,0,0,0.1);">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+                    <div>
+                        <div style="font-size: 13px; opacity: 0.9; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">Disease/Condition</div>
+                        <div style="font-size: 20px; font-weight: 700;">{user_input}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 13px; opacity: 0.9; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">Target Protein</div>
+                        <div style="font-size: 20px; font-weight: 700;">{protein_name}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 13px; opacity: 0.9; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">PDB Structure ID</div>
+                        <div style="font-size: 20px; font-weight: 700;">{pdb_id}</div>
+                    </div>
+                </div>
+                <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.2);">
+                    <div style="font-size: 12px; opacity: 0.85;">
+                        ✓ High-quality X-ray structure with no mutations • Resolution optimized • Original structure unmodified
+                    </div>
+                </div>
+            </div>
+            """
         
-        # Create 3D visualization
+        # Create 3D visualization with original structure
         structure_html = show_structure(pdb_content, pdb_id, protein_name)
         
-        # Create download file
-        temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.pdb', delete=False)
-        temp_file.write(pdb_content)
-        temp_file.close()
-        
+        # Provide the original downloaded file for download
         return {
             info_box: gr.update(value=info_html, visible=True),
             structure_viewer: gr.update(value=structure_html),
-            download_file: gr.update(value=temp_file.name),
-            search_status: gr.update(value="✅ Structure loaded successfully!", visible=True)
+            download_file: gr.update(value=pdb_path),
+            search_status: gr.update(value="✅ Structure loaded successfully! (X-ray, no mutations, optimized resolution)", visible=True)
         }
         
     except Exception as e:
@@ -119,7 +143,7 @@ def process_disease(disease_name: str):
             info_box: gr.update(visible=False),
             structure_viewer: gr.update(value=""),
             download_file: gr.update(value=None),
-            search_status: gr.update(value=f"❌ Error: {str(e)}", visible=True)
+            search_status: gr.update(value=f"❌ Error processing structure: {str(e)}", visible=True)
         }
 
 # Function wrapper for ADMET to handle Gradio outputs
@@ -194,7 +218,7 @@ with gr.Blocks(theme=gr.themes.Soft(), css="""
     gr.HTML("""
         <div class="main-header">
             <h1>🧬 Protein Structure Finder & Analyzer</h1>
-            <p>Discover, visualize and analyze protein structures related to diseases</p>
+            <p>Discover, visualize and analyze high-quality protein structures by disease or protein name</p>
         </div>
     """)
     
@@ -204,12 +228,23 @@ with gr.Blocks(theme=gr.themes.Soft(), css="""
             with gr.Row():
                 with gr.Column(scale=1):
                     disease_input = gr.Textbox(
-                        label="🔍 Enter Disease or Condition",
-                        placeholder="e.g., Alzheimer's Disease, diabetes, inflammation...",
-                        lines=1
+                        label="🔍 Enter Disease, Condition, or Protein Name",
+                        placeholder="e.g., Alzheimer's Disease, diabetes, inflammation, or hemoglobin, insulin, p53...",
+                        lines=2
                     )
                     
-                    search_btn = gr.Button("🚀 Search Structure", variant="primary", size="lg")
+                    search_btn = gr.Button("🚀 Search Best Structure", variant="primary", size="lg")
+                    
+                    gr.Markdown("""
+                    **Search Features:**
+                    - **Disease Input**: Enter a disease/condition name (e.g., "Alzheimer's", "diabetes")
+                    - **Protein Input**: Enter a protein name directly (e.g., "hemoglobin", "insulin", "p53")
+                    - Finds reviewed human proteins from UniProt
+                    - Filters for X-ray crystallography structures only
+                    - Selects best resolution without mutations
+                    - Auto-stops at excellent resolution (< 1.5Å)
+                    - Checks up to 100 structures for optimal quality
+                    """)
                     
                     info_box = gr.HTML(visible=False)
                     search_status = gr.Markdown(visible=False)
