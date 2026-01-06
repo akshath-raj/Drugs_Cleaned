@@ -223,4 +223,4 @@ with gr.Blocks(theme=gr.themes.Soft(), title="Protein Structure Finder & Analyze
     admet_btn.click(fn=process_admet, inputs=[], outputs={admet_status, admet_table, admet_download})
 
 if __name__ == "__main__":
-    demo.launch(share=False)
+    demo.launch(share=True)
